@@ -211,7 +211,6 @@ int main(int argc, char **argv) {
     help_and_quit(argv[0]);
   if (numkeys == -1)
     help_and_quit(argv[0]);
-  LogTest("ff");
 
   /* Load functions and constants for the FSAL we are currently using.*/
   FSAL_LoadFunctions();
@@ -221,7 +220,6 @@ int main(int argc, char **argv) {
   config_params.hparam.index_size = -1;
   config_params.hparam.alphabet_length = -1;
   config_params.hparam.nb_node_prealloc = -1;
-  LogTest("gg");
   /* Parse config file */
   if((ganesha_config = config_ParseFile(config_filename)) == NULL)
     {
@@ -238,52 +236,44 @@ int main(int argc, char **argv) {
   /* getting build and client context for file handle lookup */
   /* We are NOT exporting anything here, but some FSAL's may store data
    * in this structure which they require to perform lookups. */
-
   if((rc = BuddyInit(NULL)) != BUDDY_SUCCESS)
     {
       /* Failed init */
       LogTest("Memory manager could not be initialized");
       exit(1);
     }
-
   if(nfs_set_param_default(&nfs_param))
     {
       LogMajor(COMPONENT_INIT, "NFS MAIN: Error setting default parameters.");
       exit(1);
     }
-
   if(nfs_set_param_from_conf(&nfs_param, &my_nfs_start_info, config_filename))
     {
       LogMajor(COMPONENT_INIT, "NFS MAIN: Error parsing configuration file.");
       exit(1);
     }
-
   if(FSAL_IS_ERROR(status = FSAL_Init(&nfs_param.fsal_param)))
     {
       /* Failed init */
       LogMajor(COMPONENT_INIT, "NFS_INIT: FSAL library could not be initialized");
       exit(1);
     }
-
   if((FSAL_IS_ERROR(status = FSAL_str2path(testdir, FSAL_MAX_PATH_LEN, &exportpath_fsal))))
     {
       LogTest("str2path failed for %s", testdir);
       exit(1);
     }
       status = FSAL_BuildExportContext(&fs_export_context, &exportpath_fsal, NULL);
-      LogTest("ll");  
   if(FSAL_IS_ERROR(status))
     {
       LogTest( "Couldn't build export context for %s",exportpath_fsal.path);
       exit(1);
     }
-      LogTest("ooo");    
   if(FSAL_IS_ERROR(status = FSAL_InitClientContext(&context)))
     {
       LogTest( "Couldn't get the context for FSAL super user");
       exit(1);
     }
-      LogTest("pp");  
   ///////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////
 
@@ -295,17 +285,17 @@ int main(int argc, char **argv) {
   ///////////////////////////////////////////////////////////////////////////
 
   /* run benchmark */
-  for(dirnum=0; dirnum < (numkeys/FILES_PER_DIR); dirnum++) {
-    for(filenum=0; filenum < (numkeys/FILES_PER_DIR); filenum++) {
+  /*  for(dirnum=0; dirnum < (numkeys/FILES_PER_DIR); dirnum++) {
+    for(filenum=0; filenum < FILES_PER_DIR; filenum++) {
       starttime = get_time();
       endtime = get_time();
       endtime - starttime;
     }
-  }
+    }*/
 
-  hash_buffer_t *data;
-  generate_data(&data, "./testdata/1", &context);
-  free_data(data);
+  //  hash_buffer_t *data;
+  //  generate_data(&data, "./testdata/1", &context);
+  //  free_data(data);
 
   return 0;
 }
