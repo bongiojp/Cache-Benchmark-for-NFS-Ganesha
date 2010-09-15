@@ -179,7 +179,7 @@ int main(int argc, char **argv) {
   /* counters for benchmarking purposes */
   int dirnum;
   int filenum;
-  hash_buffer_t *val, *key;
+  hash_buffer_t *val, *newval, *key;
   char testfile[MAXPATHLEN];
   int testfile_len;
 
@@ -334,22 +334,53 @@ int main(int argc, char **argv) {
   */  
 
   //Set test
+  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 0);
   LogTest("trying to create handle for directory and file: %s", testfile);
   generate_data(&key, &val, testfile, &context);
+  rc = func_tab->set(ht, key, val, HASHTABLE_SET_HOW_SET_OVERWRITE);
+  if (rc != HASHTABLE_SUCCESS) {
+    LogTest("Failed to add a key/value pair to hashtable!");
+    exit(1);
+  }
+  free(key);
+
+  //Set test
+  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 1);
+  LogTest("trying to create handle for directory and file: %s", testfile);
+  generate_data(&key, &val, testfile, &context);
+  LogTest("trying to add the following handle to hashtable: handle=%s",// cookie=%d",
+	  ((cache_inode_fsal_data_t *) (val)->pdata)->handle);
+	  //	  ((cache_inode_fsal_data_t *)(key->pdata))->handle->data,
+	  //	  ((cache_inode_fsal_data_t *)(key->pdata))->cookie);
+
   rc = func_tab->set(ht, key, val, HASHTABLE_SET_HOW_SET_OVERWRITE);  
   if (rc != HASHTABLE_SUCCESS) {
     LogTest("Failed to add a key/value pair to hashtable!");
     exit(1);
   }
-
   free(key);
 
-  //Set test
-  //  testfile[testfile_len-1] = '1';
   //Get test
+  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 0);
+  generate_data(&key, &val, testfile, &context);
+  newval = NULL;
+  rc = func_tab->get(ht, key, &newval);
+  if (rc != HASHTABLE_SUCCESS) {
+    LogTest("Failed to retrieve a value from hashtable!");
+    exit(1);
+  }
+  free(key); free(val);
 
   //Get test
-
+  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 1);
+  generate_data(&key, &val, testfile, &context);
+  newval = NULL;
+  rc = func_tab->get(ht, key, &newval);
+  if (rc != HASHTABLE_SUCCESS) {
+    LogTest("Failed to retrieve a value from hashtable!");
+    exit(1);
+  }
+  free(key); free(val);
 
   /* randomly pick either get or set */
 

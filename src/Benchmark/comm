@@ -1,0 +1,3 @@
+./create_testfiles.pl /gpfs/gpfsA/ 1 100
+./benchmark --implementation=GANESHA --keys=100 --configfile=/etc/ganesha/gpfs.ganesha.nfsd.conf --time=60 --testdirectory=/gpfs/gpfsA/
+./clean_testfiles.pl /gpfs/gpfsA/ 1 100
