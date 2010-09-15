@@ -22,7 +22,7 @@
 #include "fsal.h"
 #include "../MainNFSD/nfs_init.h"
 
-#define FILES_PER_DIR 100
+#define FILES_PER_DIR 500 
 
 /* This needs to be defined because the cache gc will use it as
  * an extern */
@@ -80,8 +80,9 @@ nfs_start_info_t my_nfs_start_info = {
   .lw_mark_trigger = FALSE
 };
 
-
-void generate_data(hash_buffer_t **data, char *filename, fsal_op_context_t *context) {
+/* generates a value to store in the hash table. */
+void generate_data(hash_buffer_t **key, hash_buffer_t **val,
+		   char *filename, fsal_op_context_t *context) {
   fsal_handle_t handle;
   fsal_path_t fsalpath;
   fsal_attrib_list_t attribs;
@@ -99,10 +100,28 @@ void generate_data(hash_buffer_t **data, char *filename, fsal_op_context_t *cont
       exit(1);
     }
 
-  *data = malloc(sizeof(hash_buffer_t));
-  (*data)->pdata = malloc(sizeof(cache_entry_t));
-  //  fsdata.cookie = 0;
-  //  fsdata.handle = root_handle
+  *val = malloc(sizeof(hash_buffer_t));
+  *key = malloc(sizeof(hash_buffer_t));
+  if ((*val)== NULL || (*key)== NULL) {
+    LogTest("Couldn't malloc hash_buffer_t");
+    exit(1);
+  }
+
+  (*val)->pdata = malloc(sizeof(cache_inode_fsal_data_t));
+  (*key)->pdata = malloc(sizeof(cache_inode_fsal_data_t));
+  if ((*val)->pdata == NULL || (*key)->pdata == NULL) {
+    LogTest("Couldn't malloc cache_inode_fsal_data_t");
+    exit(1);
+  }
+
+  ((cache_inode_fsal_data_t *) (*val)->pdata)->handle = handle;
+  ((cache_inode_fsal_data_t *) (*val)->pdata)->cookie = DIR_START;
+
+  ((cache_inode_fsal_data_t *) (*key)->pdata)->handle = handle;
+  ((cache_inode_fsal_data_t *) (*key)->pdata)->cookie = DIR_START;
+
+  (*val)->len = sizeof(cache_inode_fsal_data_t);
+  (*key)->len = sizeof(cache_inode_fsal_data_t);
 }
 
 void free_data(hash_buffer_t *data) {
@@ -122,8 +141,18 @@ double get_time(){
   struct timeval t;
   gettimeofday(&t, NULL);
   double d = t.tv_sec + (double) t.tv_usec/1000000;
-  //CLOCKS_PER_SEC                                                                                                                                                                 
   return d;
+}
+
+int create_filename(char *testfile, char *path, int dir, int file) {
+  int len = strlen(path);
+  strcpy(testfile, path);
+
+  /* Add numerically named files and directories to end of export path */
+  /* This is where it is assumed test files will reside. */
+  len += snprintf(testfile+len, MAXPATHLEN - len, "%d/%d", dir, file);
+  testfile[len] = 0;
+  return len;
 }
 
 int main(int argc, char **argv) {
@@ -133,7 +162,6 @@ int main(int argc, char **argv) {
 
   struct hashtable_func *func_tab;
   uid_t uid;
-  char *testfile;
   fsal_status_t status;
   int rc = 0;
   char *testdir = NULL;
@@ -151,6 +179,9 @@ int main(int argc, char **argv) {
   /* counters for benchmarking purposes */
   int dirnum;
   int filenum;
+  hash_buffer_t *val, *key;
+  char testfile[MAXPATHLEN];
+  int testfile_len;
 
   /* statistics and timing */
   statistics *stats;
@@ -207,10 +238,14 @@ int main(int argc, char **argv) {
     curr_opt = getopt_long (argc, argv, "i:t:c:k:o:",
 			    long_options, &option_index);
   }
-  if (config_filename == NULL || testdir == NULL)
+  if (config_filename == NULL || testdir == NULL) {
+    LogTest("Include configuration filename and test directory location.");
     help_and_quit(argv[0]);
-  if (numkeys == -1)
+  }
+  if (numkeys == -1) {
+    LogTest("Include number of keys to cache.");
     help_and_quit(argv[0]);
+  }
 
   /* Load functions and constants for the FSAL we are currently using.*/
   FSAL_LoadFunctions();
@@ -275,27 +310,54 @@ int main(int argc, char **argv) {
       exit(1);
     }
   ///////////////////////////////////////////////////////////////////////////
-  ///////////////////////////////////////////////////////////////////////////
 
   /* Initialize testing framework */
   stats = new_statistics();
   ht = func_tab->init(parameters);
 
   ///////////////////////////////////////////////////////////////////////////
-  ///////////////////////////////////////////////////////////////////////////
 
   /* run benchmark */
+
+  /* add all files */
+  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 0);
+  
   /*  for(dirnum=0; dirnum < (numkeys/FILES_PER_DIR); dirnum++) {
     for(filenum=0; filenum < FILES_PER_DIR; filenum++) {
+      //  generate_data(&data, , &context);
+      //  free_data(data);
       starttime = get_time();
       endtime = get_time();
       endtime - starttime;
     }
-    }*/
+  }
+  */  
 
-  //  hash_buffer_t *data;
-  //  generate_data(&data, "./testdata/1", &context);
-  //  free_data(data);
+  //Set test
+  LogTest("trying to create handle for directory and file: %s", testfile);
+  generate_data(&key, &val, testfile, &context);
+  rc = func_tab->set(ht, key, val, HASHTABLE_SET_HOW_SET_OVERWRITE);  
+  if (rc != HASHTABLE_SUCCESS) {
+    LogTest("Failed to add a key/value pair to hashtable!");
+    exit(1);
+  }
+
+  free(key);
+
+  //Set test
+  //  testfile[testfile_len-1] = '1';
+  //Get test
+
+  //Get test
+
+
+  /* randomly pick either get or set */
+
+
+
+  /* summarize statistics */
+
+
 
   return 0;
 }
