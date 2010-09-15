@@ -44,11 +44,15 @@
 
 #include <errno.h>
 
-#define Mem_Alloc( a )       malloc( a )
-#define Mem_Calloc( s1, s2 ) calloc( s1, s2 )
-#define Mem_Realloc( p, s )  realloc( p, s )
-#define Mem_Free( a )        free( a )
-#define Mem_Errno            errno
+#define Mem_Alloc( a )                  malloc( a )
+#define Mem_Calloc( s1, s2 )            calloc( s1, s2 )
+#define Mem_Realloc( p, s )             realloc( p, s )
+#define Mem_Alloc_Label( a, lbl )       malloc( a )
+#define Mem_Calloc_Label( s1, s2, lbl ) calloc( s1, s2 )
+#define Mem_Realloc_Label( p, s, lbl)   realloc( p, s )
+#define Mem_Free( a )                   free( a )
+#define Mem_Free_Label( a, lbl )        free( a )
+#define Mem_Errno                       errno
 
 #define GetPreferedPool( _n, _s )  (_n)
 
@@ -57,16 +61,25 @@
 #include "BuddyMalloc.h"
 
 #ifdef _DEBUG_MEMLEAKS
-#  define Mem_Alloc( a )       BuddyMalloc_Autolabel( a , __FILE__, __FUNCTION__, __LINE__ )
-#  define Mem_Calloc( s1, s2 ) BuddyCalloc_Autolabel( s1, s2, __FILE__, __FUNCTION__, __LINE__ )
-#  define Mem_Realloc( p, s)   BuddyRealloc_Autolabel( (caddr_t)(p), s, __FILE__, __FUNCTION__, __LINE__ )
+#  define Mem_Alloc( a )                  BuddyMalloc_Autolabel( a , __FILE__, __FUNCTION__, __LINE__, "BuddyMalloc" )
+#  define Mem_Calloc( s1, s2 )            BuddyCalloc_Autolabel( s1, s2, __FILE__, __FUNCTION__, __LINE__, "BuddyCalloc" )
+#  define Mem_Realloc( p, s)              BuddyRealloc_Autolabel( (caddr_t)(p), s, __FILE__, __FUNCTION__, __LINE__, "BuddyRealloc" )
+#  define Mem_Alloc_Label( a, lbl )       BuddyMalloc_Autolabel( a , __FILE__, __FUNCTION__, __LINE__, lbl )
+#  define Mem_Calloc_Label( s1, s2, lbl ) BuddyCalloc_Autolabel( s1, s2, __FILE__, __FUNCTION__, __LINE__, lbl )
+#  define Mem_Realloc_Label( p, s, lbl)   BuddyRealloc_Autolabel( (caddr_t)(p), s, __FILE__, __FUNCTION__, __LINE__, lbl )
+#  define Mem_Free( a )                   BuddyFree_Autolabel( (caddr_t) (a), __FILE__, __FUNCTION__, __LINE__, "BuddyFree" )
+#  define Mem_Free_Label( a, lbl )        BuddyFree_Autolabel( (caddr_t) (a), __FILE__, __FUNCTION__, __LINE__, lbl )
 #else
-#  define Mem_Alloc( a )       BuddyMallocExit( a )
-#  define Mem_Calloc( s1, s2 ) BuddyCalloc( s1, s2 )
-#  define Mem_Realloc( p, s)   BuddyRealloc( (caddr_t)(p), s )
+#  define Mem_Alloc( a )                  BuddyMallocExit( a )
+#  define Mem_Calloc( s1, s2 )            BuddyCalloc( s1, s2 )
+#  define Mem_Realloc( p, s)              BuddyRealloc( (caddr_t)(p), s )
+#  define Mem_Alloc_Label( a, lbl )       BuddyMallocExit( a )
+#  define Mem_Calloc_Label( s1, s2, lbl ) BuddyCalloc( s1, s2 )
+#  define Mem_Realloc_Label( p, s, lbl)   BuddyRealloc( (caddr_t)(p), s )
+#  define Mem_Free( a )                   BuddyFree( (caddr_t) (a) )
+#  define Mem_Free_Label( a, lbl )        BuddyFree( (caddr_t) (a) )
 #endif
 
-#define Mem_Free( a )        BuddyFree((caddr_t) (a))
 #define Mem_Errno            BuddyErrno
 
 #define GetPreferedPool( _n, _s )  BuddyPreferedPoolCount( _n, _s)
@@ -95,7 +108,7 @@
  * @return  nothing (this is a macro), but pool will be NULL if an error occures. 
  *
  */
-#define STUFF_PREALLOC( _pool, _nb, _type, _name_next )                       \
+#define STUFF_PREALLOC( _pool, _nb, _type, _name_next)                        \
 do                                                                            \
 {                                                                             \
   unsigned int _i = 0 ;                                                       \
@@ -104,7 +117,7 @@ do                                                                            \
   _prefered = GetPreferedPool( _nb, sizeof(_type) );                          \
   _pool= NULL ;                                                               \
                                                                               \
-  if( ( _pool = ( _type *)Mem_Alloc( sizeof( _type ) * _prefered ) ) != NULL ) \
+  if( ( _pool = ( _type *)Mem_Alloc_Label( sizeof( _type ) * _prefered, # _type ) ) != NULL ) \
     {                                                                         \
       for( _i = 0 ; _i < ( unsigned int)_prefered ; _i++ )                    \
         {                                                                     \
@@ -115,6 +128,7 @@ do                                                                            \
         }                                                                     \
     }                                                                         \
 } while( 0 )
+
 
 /**
  *
@@ -199,9 +213,9 @@ do                                                                        \
   unsigned int _i = 0 ;                                                   \
   unsigned int _prefered = 0 ;                                            \
                                                                           \
-  _prefered = GetPreferedPool( _nb, sizeof(_type) );                       \
+  _prefered = GetPreferedPool( _nb, sizeof(_type) );                      \
                                                                           \
-  _pool = ( _type *)Mem_Calloc( _prefered, sizeof( _type ) ) ;            \
+  _pool = ( _type *)Mem_Calloc_Label( _prefered, sizeof( _type ), # _type ) ; \
                                                                           \
   if( _pool != NULL )                                                     \
     {                                                                     \
@@ -288,13 +302,13 @@ do                                                                        \
 #define GET_PREALLOC( entry, pool, nb, type, name_next )                  \
 do                                                                        \
 {                                                                         \
-  entry = (type *)Mem_Alloc( sizeof( type ));                             \
+  entry = (type *)Mem_Alloc_Label( sizeof( type ), # _type );             \
   entry->name_next = NULL;                                                \
 } while( 0 )
 
-#define RELEASE_PREALLOC( entry, pool, name_next )     Mem_Free( entry )
+#define RELEASE_PREALLOC( entry, pool, name_next ) Mem_Free( entry, # _type )
 
-#define STUFF_PREALLOC_CONSTRUCT( pool, nb, type, name_next, construct )   \
+#define STUFF_PREALLOC_CONSTRUCT( pool, nb, type, name_next, construct )  \
               do {                                                        \
                 /* No pool management in this mode */                     \
                 pool = NULL;                                              \
@@ -303,7 +317,7 @@ do                                                                        \
 #define GET_PREALLOC_CONSTRUCT( entry, pool, nb, type, name_next, construct ) \
 do                                                                        \
 {                                                                         \
-  entry = (type *)Mem_Alloc( sizeof( type ));                             \
+  entry = (type *)Mem_Alloc_Label( sizeof( type ), # _type );             \
   construct( (void *)(entry) );                                           \
   entry->name_next = NULL;                                                \
 } while( 0 )
@@ -312,7 +326,7 @@ do                                                                        \
 do                                                                        \
 {                                                                         \
   destruct( (void *)(entry) ) ;                                           \
-  Mem_Free( entry );                                                      \
+  Mem_Free_Label( entry, # _type );                                       \
 } while( 0 )
 
 #endif                          /* no block preallocation */

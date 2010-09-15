@@ -87,7 +87,6 @@ extern fd_set Svc_fdset;
 extern nfs_worker_data_t *workers_data;
 extern nfs_parameter_t nfs_param;
 extern exportlist_t *pexportlist;
-extern SVCXPRT *Xports[FD_SETSIZE];     /* The one from RPCSEC_GSS library */
 #ifdef _RPCSEC_GS_64_INSTALLED
 struct svc_rpc_gss_data **TabGssData;
 #endif
@@ -97,10 +96,6 @@ extern int rpcsec_gss_flag;
 #ifndef _NO_BUDDY_SYSTEM
 extern buddy_parameter_t buddy_param_worker;
 #endif
-
-extern pthread_mutex_t mutex_cond_xprt[FD_SETSIZE];
-extern pthread_cond_t condvar_xprt[FD_SETSIZE];
-extern int etat_xprt[FD_SETSIZE];
 
 /**
  * rpc_tcp_socket_manager_thread: manages a TCP socket connected to a client.
@@ -141,6 +136,13 @@ void *rpc_tcp_socket_manager_thread(void *Arg)
     {
       /* Failed init */
       LogCrit(COMPONENT_DISPATCH, "Memory manager could not be initialized");
+      #ifdef _DEBUG_MEMLEAKS
+      {
+        FILE *output = fopen("/tmp/buddymem", "w");
+        if (output != NULL)
+          BuddyDumpAll(output);
+      }
+      #endif
       exit(1);
     }
 #endif
@@ -162,22 +164,12 @@ void *rpc_tcp_socket_manager_thread(void *Arg)
       /* Get a pnfsreq from the worker's pool */
       P(workers_data[worker_index].request_pool_mutex);
 
-#ifdef _DEBUG_MEMLEAKS
-      /* For debugging memory leaks */
-      BuddySetDebugLabel("nfs_request_data_t");
-#endif
-
       GET_PREALLOC_CONSTRUCT(pnfsreq,
                              workers_data[worker_index].request_pool,
                              nfs_param.worker_param.nb_pending_prealloc,
                              nfs_request_data_t,
                              next_alloc, constructor_nfs_request_data_t );
  
-#ifdef _DEBUG_MEMLEAKS
-      /* For debugging memory leaks */
-      BuddySetDebugLabel("N/A");
-#endif
-
       V(workers_data[worker_index].request_pool_mutex);
 
       if(pnfsreq == NULL)
@@ -283,9 +275,9 @@ void *rpc_tcp_socket_manager_thread(void *Arg)
 #endif                          /* _USE_TIRPC */
                 strncpy(str_caller, "unresolved", MAXNAMLEN);
 
-              LogCrit(COMPONENT_DISPATCH,
-                   "TCP SOCKET MANAGER Sock=%d: the client (%s) disappeared... Stopping thread ",
-                   tcp_sock, str_caller);
+              LogEvent(COMPONENT_DISPATCH,
+                       "TCP SOCKET MANAGER Sock=%d: the client (%s) disappeared... Stopping thread %p",
+                       tcp_sock, str_caller, pthread_self());
 
               if(Xports[tcp_sock] != NULL)
                 SVC_DESTROY(Xports[tcp_sock]);
@@ -307,8 +299,8 @@ void *rpc_tcp_socket_manager_thread(void *Arg)
               sleep(nfs_param.core_param.expiration_dupreq * 2);   /** @todo : remove this for a cleaner fix */
               if((rc = BuddyDestroy()) != BUDDY_SUCCESS)
                 LogCrit(COMPONENT_DISPATCH,
-                     "TCP SOCKET MANAGER Sock=%d (on exit): got error %u from BuddyDestroy",
-                     rc);
+                        "TCP SOCKET MANAGER Sock=%d (on exit): got error %d from BuddyDestroy",
+                        tcp_sock, rc);
 #endif                          /*  _NO_BUDDY_SYSTEM */
 
               return NULL;

@@ -280,7 +280,7 @@ cache_inode_status_t cache_inode_open_by_name(cache_entry_t * pentry_dir,
 
       /* If proxy if used, we should keep the name of the file to do FSAL_rcp if needed */
       if((pentry_file->object.file.pname =
-          (fsal_name_t *) Mem_Alloc(sizeof(fsal_name_t))) == NULL)
+          (fsal_name_t *) Mem_Alloc_Label(sizeof(fsal_name_t), "fsal_name_t")) == NULL)
         {
           *pstatus = CACHE_INODE_MALLOC_ERROR;
 
@@ -406,7 +406,7 @@ cache_inode_status_t cache_inode_close(cache_entry_t * pentry,
      (pentry->object.file.open_fd.fileno > (int)(pclient->max_fd_per_thread)))
     {
 
-      LogFullDebug(COMPONENT_CACHE_INODE, "cache_inode_close: pentry %p, fileno = %d, lastop=%d ago\n",
+      LogDebug(COMPONENT_CACHE_INODE, "cache_inode_close: pentry %p, fileno = %d, lastop=%d ago\n",
              pentry, pentry->object.file.open_fd.fileno,
              (int)(time(NULL) - pentry->object.file.open_fd.last_op));
 
