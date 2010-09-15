@@ -5,8 +5,9 @@ benchmark_SOURCES       = benchmark.c                      \
                           ../include/fsal.h                \
                           ../include/fsal_types.h          \
                           ../include/HashData.h            \
-                          ../include/HashTable.h           
+                          ../include/HashTable.h           \
+                          ../MainNFSD/nfs_init.h
 
-benchmark_LDADD                   =                                       ../MainNFSD/libMainServices.la
+benchmark_LDADD         = ../MainNFSD/libMainServices.la 
 
 new: clean all

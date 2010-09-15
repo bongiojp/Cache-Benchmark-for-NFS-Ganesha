@@ -18,8 +18,15 @@
 #include "fsal_types.h"
 #include "log_macros.h"
 #include "fsal_glue.h"
+#include "nfs_core.h"
+#include "fsal.h"
+#include "../MainNFSD/nfs_init.h"
 
 #define FILES_PER_DIR 100
+
+/* This needs to be defined because the cache gc will use it as
+ * an extern */
+char ganesha_exec_path[MAXPATHLEN];
 
 struct hashtable_func {
   void *(*init)(hash_parameter_t);
@@ -62,6 +69,17 @@ hash_parameter_t parameters =
   .key_to_str = NULL, /*int display_cache(hash_buffer_t * pbuff, char *str)  { return 0;  }*/
   .val_to_str = NULL  /*int display_cache(hash_buffer_t * pbuff, char *str)  { return 0;  }*/
 };
+
+/* Needed for reading the configuration file so we can initialize the fsal
+ * so we can use the fsal for getting real file handles. */
+nfs_start_info_t my_nfs_start_info = {
+  .flush_datacache_mode = FALSE,
+  .dump_default_config = FALSE,
+  .nb_flush_threads = 1,
+  .flush_behaviour = CACHE_CONTENT_FLUSH_AND_DELETE,
+  .lw_mark_trigger = FALSE
+};
+
 
 void generate_data(hash_buffer_t **data, char *filename, fsal_op_context_t *context) {
   fsal_handle_t handle;
@@ -117,6 +135,7 @@ int main(int argc, char **argv) {
   uid_t uid;
   char *testfile;
   fsal_status_t status;
+  int rc = 0;
   char *testdir = NULL;
   char *config_filename = NULL;
   config_file_t ganesha_config;
@@ -127,6 +146,7 @@ int main(int argc, char **argv) {
   fsal_path_t exportpath_fsal;
   int numkeys = -1; /* number of files to cache during benchmark */
   int timetorun = 60; /* seconds */
+  nfs_parameter_t nfs_param;
 
   /* counters for benchmarking purposes */
   int dirnum;
@@ -192,7 +212,7 @@ int main(int argc, char **argv) {
   if (numkeys == -1)
     help_and_quit(argv[0]);
   LogTest("ff");
-  
+
   /* Load functions and constants for the FSAL we are currently using.*/
   FSAL_LoadFunctions();
   FSAL_LoadConsts();
@@ -218,25 +238,52 @@ int main(int argc, char **argv) {
   /* getting build and client context for file handle lookup */
   /* We are NOT exporting anything here, but some FSAL's may store data
    * in this structure which they require to perform lookups. */
+
+  if((rc = BuddyInit(NULL)) != BUDDY_SUCCESS)
+    {
+      /* Failed init */
+      LogTest("Memory manager could not be initialized");
+      exit(1);
+    }
+
+  if(nfs_set_param_default(&nfs_param))
+    {
+      LogMajor(COMPONENT_INIT, "NFS MAIN: Error setting default parameters.");
+      exit(1);
+    }
+
+  if(nfs_set_param_from_conf(&nfs_param, &my_nfs_start_info, config_filename))
+    {
+      LogMajor(COMPONENT_INIT, "NFS MAIN: Error parsing configuration file.");
+      exit(1);
+    }
+
+  if(FSAL_IS_ERROR(status = FSAL_Init(&nfs_param.fsal_param)))
+    {
+      /* Failed init */
+      LogMajor(COMPONENT_INIT, "NFS_INIT: FSAL library could not be initialized");
+      exit(1);
+    }
+
   if((FSAL_IS_ERROR(status = FSAL_str2path(testdir, FSAL_MAX_PATH_LEN, &exportpath_fsal))))
     {
       LogTest("str2path failed for %s", testdir);
       exit(1);
     }
-      status = FSAL_BuildExportContext(&fs_export_context, &exportpath_fsal, "");
+      status = FSAL_BuildExportContext(&fs_export_context, &exportpath_fsal, NULL);
       LogTest("ll");  
   if(FSAL_IS_ERROR(status))
     {
-      LogTest( "Couldn't build export context for %s",exportpath_fsal);
+      LogTest( "Couldn't build export context for %s",exportpath_fsal.path);
       exit(1);
     }
-  
+      LogTest("ooo");    
   if(FSAL_IS_ERROR(status = FSAL_InitClientContext(&context)))
     {
       LogTest( "Couldn't get the context for FSAL super user");
       exit(1);
     }
-      LogTest("mm");  
+      LogTest("pp");  
   ///////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////
 
