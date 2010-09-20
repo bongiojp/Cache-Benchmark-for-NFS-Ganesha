@@ -2,27 +2,28 @@
 #define _BENCHSTATS_H_
 
 #include "log_macros.h"
+#define TIMER_T unsigned long long int
 
 typedef struct stat_t {
   int tot_num_gets;
-  double tot_get_time;
-  double get_time_high;/* longest recorded time */
-  double get_time_low; /* shortest recorded time */
+  TIMER_T tot_get_time;
+  TIMER_T get_time_high;/* longest recorded time */
+  TIMER_T get_time_low; /* shortest recorded time */
 
   int tot_num_sets;
-  double tot_set_time;
-  double set_time_high;/* longest recorded time */
-  double set_time_low; /* shortest recorded time */
+  TIMER_T tot_set_time;
+  TIMER_T set_time_high;/* longest recorded time */
+  TIMER_T set_time_low; /* shortest recorded time */
 
   int tot_num_dels;
-  double tot_del_time;
-  double del_time_high;/* longest recorded time */
-  double del_time_low; /* shortest recorded time */
+  TIMER_T tot_del_time;
+  TIMER_T del_time_high;/* longest recorded time */
+  TIMER_T del_time_low; /* shortest recorded time */
 
   int tot_num_getsizes;
-  double tot_getsize_time;
-  double getsize_time_high;/* longest recorded time */
-  double getsize_time_low; /* shortest recorded time */
+  TIMER_T tot_getsize_time;
+  TIMER_T getsize_time_high;/* longest recorded time */
+  TIMER_T getsize_time_low; /* shortest recorded time */
 } statistics;
 
 statistics *new_statistics() {
@@ -35,35 +36,49 @@ statistics *new_statistics() {
 }
 
 void print_statistics(statistics *st, int numkeys) {
-  LogTest("Total Number of Keys in Table at Once: %d", numkeys);
+  TIMER_T thous = 1000;
 
+  LogTest("Total Number of Keys in Table at Once: %d", numkeys);
   LogTest("Operation: SET");
   LogTest("\tTotal Count: %d", st->tot_num_sets);
-  LogTest("\tTotal Time: %f s", st->tot_set_time);
-  LogTest("\tAverage Time: %f ms", (st->tot_set_time/st->tot_num_sets)*1000.0);
-  LogTest("\tMaximum Time: %f ms", (st->set_time_high)*1000.0);
-  LogTest("\tMinimum Time: %f ms", (st->set_time_low)*1000.0);
+
+  LogTest("\tTotal Time: %llu us", st->tot_set_time);
+  if (st->tot_num_sets == 0)
+    LogTest("\tAverage Time: %d us", 0);
+  else
+    LogTest("\tAverage Time: %f us", (double)st->tot_set_time/st->tot_num_sets);
+  LogTest("\tMaximum Time: %llu us", st->set_time_high);
+  LogTest("\tMinimum Time: %llu us", st->set_time_low);
 
   LogTest("Operation: GET");
   LogTest("\tTotal Count: %d", st->tot_num_gets);
-  LogTest("\tTotal Time: %f s", st->tot_get_time);
-  LogTest("\tAverage Time: %f ms", (st->tot_get_time/st->tot_num_gets)*1000.0);
-  LogTest("\tMaximum Time: %f ms", (st->get_time_high)*1000.0);
-  LogTest("\tMinimum Time: %f ms", (st->get_time_low)*1000.0);
+  LogTest("\tTotal Time: %llu us", st->tot_get_time);
+  if (st->tot_num_gets == 0)
+    LogTest("\tAverage Time: %d us", 0);
+  else
+    LogTest("\tAverage Time: %f us", (double)st->tot_get_time/st->tot_num_gets);
+  LogTest("\tMaximum Time: %llu us", st->get_time_high);
+  LogTest("\tMinimum Time: %llu us", st->get_time_low);
 
   LogTest("Operation: DEL");
   LogTest("\tTotal Count: %d", st->tot_num_dels);
-  LogTest("\tTotal Time: %f s", st->tot_del_time);
-  LogTest("\tAverage Time: %f ms", (st->tot_del_time/st->tot_num_dels)*1000.0);
-  LogTest("\tMaximum Time: %f ms", (st->del_time_high)*1000.0);
-  LogTest("\tMinimum Time: %f ms", (st->del_time_low)*1000.0);
+  LogTest("\tTotal Time: %llu us", st->tot_del_time);
+  if (st->tot_num_dels == 0)
+    LogTest("\tAverage Time: %d us", 0);
+  else
+    LogTest("\tAverage Time: %f us", (double)st->tot_del_time/st->tot_num_dels);
+  LogTest("\tMaximum Time: %llu us", st->del_time_high);
+  LogTest("\tMinimum Time: %llu us", st->del_time_low);
 
   LogTest("Operation: GETSIZE");
   LogTest("\tTotal Count: %d", st->tot_num_getsizes);
-  LogTest("\tTotal Time: %f s", st->tot_getsize_time);
-  LogTest("\tAverage Time: %f ms", (st->tot_getsize_time/st->tot_num_getsizes)*1000.0);
-  LogTest("\tMaximum Time: %f ms", (st->getsize_time_high)*1000.0);
-  LogTest("\tMinimum Time: %f ms", (st->getsize_time_low)*1000.0);
+  LogTest("\tTotal Time: %f ms", (double)st->tot_getsize_time/thous);
+  if (st->tot_num_getsizes == 0)
+    LogTest("\tAverage Time: %d us", 0);
+  else
+    LogTest("\tAverage Time: %f us", (double)st->tot_getsize_time/st->tot_num_getsizes);
+  LogTest("\tMaximum Time: %llu us", st->getsize_time_high);
+  LogTest("\tMinimum Time: %llu us", st->getsize_time_low);
 
 }
 

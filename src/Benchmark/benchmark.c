@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <sys/time.h>
+#include <math.h>
 
 /* cacheing algorithms */
 #include "ganesha_ht.h"
@@ -23,7 +24,7 @@
 #include "../MainNFSD/nfs_init.h"
 
 #define FILES_PER_DIR 1000
-
+#define TIMER_T unsigned long long int
 /* This needs to be defined because the cache gc will use it as
  * an extern */
 char ganesha_exec_path[MAXPATHLEN];
@@ -84,14 +85,22 @@ nfs_start_info_t my_nfs_start_info = {
 
 /* GLOBALS */
 statistics *stats;
-double starttime;// = get_time();                                                                                                                                                
-double endtime;
+TIMER_T starttime;
+TIMER_T endtime;
 struct hashtable_func *func_tab;
 
 enum hashtable_t {GANESHA, GLIB};
 enum hashtable_t HASHTABLE;
 
 int debug = 0;
+
+TIMER_T get_time(){
+  struct timeval t;
+  gettimeofday(&t, NULL);
+  //  double d = t.tv_sec + (double) t.tv_usec/1000000;
+  TIMER_T d = t.tv_sec * pow(10,6) + t.tv_usec;
+  return d;
+}
 
 /* generates a value to store in the hash table. */
 void generate_data(hash_buffer_t **key, hash_buffer_t **val,
@@ -157,14 +166,6 @@ void help_and_quit(char *progname) {
 	     " \n\t\t--testdirectory=[path to a dir with test files]\n", progname);
     exit(1);
 }
-
-double get_time(){
-  struct timeval t;
-  gettimeofday(&t, NULL);
-  double d = t.tv_sec + (double) t.tv_usec/1000000;
-  return d;
-}
-
 int create_filename(char *testfile, char *path, int dir, int file) {
   int len = strlen(path);
   strcpy(testfile, path);
@@ -181,7 +182,7 @@ void store(void *ht, fsal_op_context_t *context, fsal_path_t exportpath_fsal, in
   hash_buffer_t *val, *key;
   char *testfile = malloc(sizeof(char) * MAXPATHLEN);
   int testfile_len;
-  double time;
+  TIMER_T time;
 
   testfile_len = create_filename(testfile, exportpath_fsal.path, dir, file);
   generate_data(&key, &val, testfile, context, dir*FILES_PER_DIR+file);
@@ -214,7 +215,7 @@ void retrieve(void *ht, fsal_op_context_t *context, fsal_path_t exportpath_fsal,
   hash_buffer_t *val, *oldval, *key;
   char *testfile = malloc(sizeof(char) * MAXPATHLEN);
   int testfile_len;
-  double time;
+  TIMER_T time;
   int counter;
   testfile_len = create_filename(testfile, exportpath_fsal.path, dir, file);
   generate_data(&key, &val, testfile, context, dir*FILES_PER_DIR+file);
@@ -348,7 +349,7 @@ void del(void *ht, fsal_op_context_t *context, fsal_path_t exportpath_fsal, int 
   hash_buffer_t *val, *oldval, *key, *oldkey;
   char *testfile = malloc(sizeof(char) * MAXPATHLEN);
   int testfile_len;
-  double time;
+  TIMER_T time;
   int counter;
 
   testfile_len = create_filename(testfile, exportpath_fsal.path, dir, file);
@@ -596,9 +597,9 @@ int main(int argc, char **argv) {
 	del(ht, &context, exportpath_fsal, dirnum,filenum);
     fprintf(stderr, "a%d\n", count);
   }
-
+  fprintf(stderr, "aaaaaaaaaaaaaaaaaaaaaa");
   /* summarize statistics */
   print_statistics(stats, numkeys);
-
+  fprintf(stderr, "bbbbbbbbbbbbbbbbbbbbbb");
   return 0;
 }
