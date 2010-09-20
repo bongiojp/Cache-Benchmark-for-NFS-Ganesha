@@ -22,7 +22,7 @@
 #include "fsal.h"
 #include "../MainNFSD/nfs_init.h"
 
-#define FILES_PER_DIR 500 
+#define FILES_PER_DIR 1000
 
 /* This needs to be defined because the cache gc will use it as
  * an extern */
@@ -32,10 +32,11 @@ struct hashtable_func {
   void *(*init)(hash_parameter_t);
   int (*get)(void *, hash_buffer_t *, hash_buffer_t **);
   int (*set)(void *, hash_buffer_t *, hash_buffer_t *, hashtable_set_how_t);
-  int (*del)(void *, hash_buffer_t *, hash_buffer_t *, hash_buffer_t *);
+  int (*del)(void *, hash_buffer_t *, hash_buffer_t **, hash_buffer_t **);
   unsigned int (*getsize)(void *);
   void (*dest)(void);
 };
+
 
 /* functions from ganesha_ht.h */
 struct hashtable_func ganesha_func = {
@@ -60,7 +61,7 @@ struct hashtable_func glib_func = {
 /* From MainNFSD/nfs_init.c */
 hash_parameter_t parameters = 
 {
-  .index_size = 500,
+  .index_size = 17,
   .alphabet_length = 10, 
   .nb_node_prealloc = 100, 
   .hash_func_key = cache_inode_fsal_hash_func,
@@ -80,9 +81,21 @@ nfs_start_info_t my_nfs_start_info = {
   .lw_mark_trigger = FALSE
 };
 
+
+/* GLOBALS */
+statistics *stats;
+double starttime;// = get_time();                                                                                                                                                
+double endtime;
+struct hashtable_func *func_tab;
+
+enum hashtable_t {GANESHA, GLIB};
+enum hashtable_t HASHTABLE;
+
+int debug = 0;
+
 /* generates a value to store in the hash table. */
 void generate_data(hash_buffer_t **key, hash_buffer_t **val,
-		   char *filename, fsal_op_context_t *context) {
+		   char *filename, fsal_op_context_t *context, int i) {
   fsal_handle_t handle;
   fsal_path_t fsalpath;
   fsal_attrib_list_t attribs;
@@ -107,26 +120,34 @@ void generate_data(hash_buffer_t **key, hash_buffer_t **val,
     exit(1);
   }
 
-  (*val)->pdata = malloc(sizeof(cache_inode_fsal_data_t));
+  (*val)->pdata = malloc(sizeof(cache_entry_t));
   (*key)->pdata = malloc(sizeof(cache_inode_fsal_data_t));
   if ((*val)->pdata == NULL || (*key)->pdata == NULL) {
-    LogTest("Couldn't malloc cache_inode_fsal_data_t");
+    LogTest("Couldn't malloc key/value pair");
     exit(1);
   }
 
-  ((cache_inode_fsal_data_t *) (*val)->pdata)->handle = handle;
-  ((cache_inode_fsal_data_t *) (*val)->pdata)->cookie = DIR_START;
-
   ((cache_inode_fsal_data_t *) (*key)->pdata)->handle = handle;
-  ((cache_inode_fsal_data_t *) (*key)->pdata)->cookie = DIR_START;
+  ((cache_inode_fsal_data_t *) (*key)->pdata)->cookie = i;
 
-  (*val)->len = sizeof(cache_inode_fsal_data_t);
+  ((cache_entry_t *) (*val)->pdata)->internal_md.type = REGULAR_FILE;
+  ((cache_entry_t *) (*val)->pdata)->object.file.handle = handle;
+  ((cache_entry_t *) (*val)->pdata)->object.file.pentry_content = (void *)filename;
+  ((cache_entry_t *) (*val)->pdata)->object.file.open_fd.fileno = i;
+
+  (*val)->len = sizeof(cache_entry_t);
   (*key)->len = sizeof(cache_inode_fsal_data_t);
 }
 
-void free_data(hash_buffer_t *data) {
-  free(data->pdata);
-  free(data);
+void free_hash_key(hash_buffer_t *key) {
+  free(key->pdata);
+  free(key);
+}
+
+void free_hash_val(hash_buffer_t *val) {
+  free( ((cache_entry_t *) (val)->pdata)->object.file.pentry_content );
+  free(val->pdata);
+  free(val);
 }
 
 void help_and_quit(char *progname) {
@@ -155,38 +176,266 @@ int create_filename(char *testfile, char *path, int dir, int file) {
   return len;
 }
 
+void store(void *ht, fsal_op_context_t *context, fsal_path_t exportpath_fsal, int dir, int file) {
+  int rc;
+  hash_buffer_t *val, *key;
+  char *testfile = malloc(sizeof(char) * MAXPATHLEN);
+  int testfile_len;
+  double time;
+
+  testfile_len = create_filename(testfile, exportpath_fsal.path, dir, file);
+  generate_data(&key, &val, testfile, context, dir*FILES_PER_DIR+file);
+  starttime = get_time();
+  if (debug) {
+    LogTest("SET %d %d: %p %p", dir, file, key, val);
+    LogTest("filename: %p", testfile);
+  }
+  rc = func_tab->set(ht, key, val, HASHTABLE_SET_HOW_SET_OVERWRITE);
+  
+  endtime = get_time();
+  time = endtime - starttime;     
+
+  stats->tot_num_sets++;
+  stats->tot_set_time += time;
+  stats->tot_set_time += time;
+  if (time > stats->get_time_high)
+    stats->set_time_high = time;
+  if (time < stats->get_time_low)
+    stats->set_time_low = time;
+
+  if (rc != HASHTABLE_SUCCESS) {
+    LogTest("Failed to add a key/value pair to hashtable!");
+    exit(1);
+  }
+}
+
+void retrieve(void *ht, fsal_op_context_t *context, fsal_path_t exportpath_fsal, int dir, int file) {
+  int rc;
+  hash_buffer_t *val, *oldval, *key;
+  char *testfile = malloc(sizeof(char) * MAXPATHLEN);
+  int testfile_len;
+  double time;
+  int counter;
+  testfile_len = create_filename(testfile, exportpath_fsal.path, dir, file);
+  generate_data(&key, &val, testfile, context, dir*FILES_PER_DIR+file);
+  oldval = NULL;
+
+  starttime = get_time();
+  rc = func_tab->get(ht, key, &oldval);
+  endtime = get_time();                                                                                                                                                        
+  time = endtime - starttime;     
+
+  stats->tot_num_gets++;
+  stats->tot_get_time += time;
+  if (time > stats->get_time_high)
+    stats->get_time_high = time;
+  if (time < stats->get_time_low)
+    stats->get_time_low = time;
+
+  if (rc != HASHTABLE_SUCCESS) {
+    LogTest("Failed to retrieve a value from hashtable during retrieve! %s", testfile);
+    exit(1);
+  }
+  if (debug) {
+    LogTest("GOT %d %d: %p %p ---> %p", dir, file, key, val, oldval);
+
+    /* Check that the retrieved value is correct */
+    if (((cache_entry_t *) oldval->pdata)->internal_md.type != REGULAR_FILE) {
+      LogTest("(get)Retrieved incorrect file type for %d %d", dir, file);
+      exit(1);
+    }
+    
+    for(counter=0;
+	counter < ((cache_entry_t *) (oldval)->pdata)->object.file.handle.handle.handle_size;
+	counter++)
+      {
+	if (((cache_entry_t *) (oldval)->pdata)->object.file.handle.handle.f_handle[counter] !=
+	    ((cache_entry_t *) (val)->pdata)->object.file.handle.handle.f_handle[counter]) 
+	  {
+	    LogTest("Retrieved incorrect handle for %d %d", dir, file);
+	    exit(1);
+	  }
+      }
+    
+    if (strncmp(((cache_entry_t *) (oldval)->pdata)->object.file.pentry_content,
+		testfile, testfile_len) != 0) {
+      LogTest("Retrieved incorrect filename for %d %d", dir, file);    
+      exit(1);
+    }
+    
+    LogTest("first: %s", ((cache_entry_t *) (oldval)->pdata)->object.file.pentry_content);
+    LogTest("second: %s", testfile);
+    LogTest("filename: %p", ((cache_entry_t *) (oldval)->pdata)->object.file.pentry_content);
+    if ( ((cache_entry_t *) (oldval)->pdata)->object.file.open_fd.fileno
+	 != dir*FILES_PER_DIR+file) {
+      LogTest("Retrieved incorrect file number for %d %d", dir, file);    
+      exit(1);
+    }
+  }
+
+  free_hash_val(val);
+  free_hash_key(key);
+  /* THERE WILL BE A MEMORY LEAK OR CONFLICT HERE DEPENDING ON THE HASHTABLE IMPLEMENTATION */
+  /* GANESHA ONLY RETURNS THE PDATA, NOT THE HASH_VALUE_T DATA STRUCTURE */
+  if (HASHTABLE == GANESHA)
+    free(oldval);
+}
+
+void retrieve_no_stats(void *ht, fsal_op_context_t *context, fsal_path_t exportpath_fsal, int dir, int file) {
+  int rc;
+  hash_buffer_t *val, *oldval, *key;
+  char *testfile = malloc(sizeof(char) * MAXPATHLEN);
+  int testfile_len;
+  int counter;
+
+  testfile_len = create_filename(testfile, exportpath_fsal.path, dir, file);
+  generate_data(&key, &val, testfile, context, dir*FILES_PER_DIR+file);
+  oldval = NULL;
+
+  rc = func_tab->get(ht, key, &oldval);
+
+  if (rc != HASHTABLE_SUCCESS) {
+    LogTest("Failed to retrieve a value from hashtable during retrieve! %s", testfile);
+    exit(1);
+  }
+
+  if (debug) {
+    LogTest("GOT-NS %d %d: %p %p ---> %p", dir, file, key, val, oldval);
+
+    /* Check that the retrieved value is correct */
+    if (((cache_entry_t *) oldval->pdata)->internal_md.type != REGULAR_FILE) {
+      LogTest("(nostat)Retrieved incorrect file type for %d %d", dir, file);
+      exit(1);
+    }
+    
+    for(counter=0;
+	counter < ((cache_entry_t *) (oldval)->pdata)->object.file.handle.handle.handle_size;
+	counter++)
+      {
+	if (((cache_entry_t *) (oldval)->pdata)->object.file.handle.handle.f_handle[counter] !=
+	    ((cache_entry_t *) (val)->pdata)->object.file.handle.handle.f_handle[counter]) 
+	  {
+	    LogTest("Retrieved incorrect handle for %d %d", dir, file);
+	    exit(1);
+	  }
+      }
+    
+    if (strncmp(((cache_entry_t *) (oldval)->pdata)->object.file.pentry_content,
+		testfile, testfile_len) != 0) {
+      LogTest("Retrieved incorrect filename for %d %d", dir, file);
+      LogTest("filename: %p", ((cache_entry_t *) (oldval)->pdata)->object.file.pentry_content);
+      exit(1);
+    }
+    
+    
+    if ( ((cache_entry_t *) (oldval)->pdata)->object.file.open_fd.fileno
+	 != dir*FILES_PER_DIR+file) {
+      LogTest("Retrieved incorrect file number for %d %d", dir, file);    
+      exit(1);
+    }
+  }
+  
+  free_hash_val(val);
+  free_hash_key(key);
+  /* THERE WILL BE A MEMORY LEAK OR CONFLICT HERE DEPENDING ON THE HASHTABLE IMPLEMENTATION */
+  /* GANESHA ONLY RETURNS THE PDATA, NOT THE HASH_VALUE_T DATA STRUCTURE */
+  if (HASHTABLE == GANESHA)
+    free(oldval);
+}
+
+void del(void *ht, fsal_op_context_t *context, fsal_path_t exportpath_fsal, int dir, int file) {
+  int rc;
+  hash_buffer_t *val, *oldval, *key, *oldkey;
+  char *testfile = malloc(sizeof(char) * MAXPATHLEN);
+  int testfile_len;
+  double time;
+  int counter;
+
+  testfile_len = create_filename(testfile, exportpath_fsal.path, dir, file);
+  generate_data(&key, &val, testfile, context, dir*FILES_PER_DIR+file);
+  oldval = oldkey = NULL;
+
+  starttime = get_time();                                                                                                                                                      
+  rc = func_tab->del(ht, key, &oldkey, &oldval);
+  endtime = get_time();                                                                                                                                                        
+  time = endtime - starttime;     
+
+  stats->tot_num_dels++;
+  stats->tot_del_time += time;
+  if (time > stats->del_time_high)
+    stats->del_time_high = time;
+  if (time < stats->del_time_low)
+    stats->del_time_low = time;
+
+  if (rc != HASHTABLE_SUCCESS) {
+    LogTest("Failed to remove a key/value pair from hashtable! %s", testfile);
+    exit(1);
+  }
+
+  if (debug) {
+    /* Check that the retrieved value is correct */
+    if (((cache_entry_t *) oldval->pdata)->internal_md.type != REGULAR_FILE) {
+      LogTest("(del)Retrieved incorrect file type for %d %d", dir, file);
+      exit(1);
+    }
+    
+    for(counter=0;
+	counter < ((cache_entry_t *) (oldval)->pdata)->object.file.handle.handle.handle_size;
+	counter++)
+      {
+	if (((cache_entry_t *) (oldval)->pdata)->object.file.handle.handle.f_handle[counter] !=
+	    ((cache_entry_t *) (val)->pdata)->object.file.handle.handle.f_handle[counter]) 
+	  {
+	    LogTest("Retrieved incorrect handle for %d %d", dir, file);
+	    exit(1);
+	  }
+      }
+    
+    if (strncmp(((cache_entry_t *) (oldval)->pdata)->object.file.pentry_content,
+		testfile, testfile_len) != 0) {
+      LogTest("Retrieved incorrect filename for %d %d", dir, file);    
+      exit(1);
+    }
+    
+    if ( ((cache_entry_t *) (oldval)->pdata)->object.file.open_fd.fileno
+	 != dir*FILES_PER_DIR+file) {
+      LogTest("Retrieved incorrect file number for %d %d", dir, file);    
+      exit(1);
+    }
+  }
+
+  /* Free key/value pair that was removed from the hashtable */
+  free_hash_key(key);
+  free_hash_key(oldkey);
+  free_hash_val(val);
+  free_hash_val(oldval);
+}
+
 int main(int argc, char **argv) {
 
   int curr_opt;
   int option_index = 0;
 
-  struct hashtable_func *func_tab;
   uid_t uid;
   fsal_status_t status;
   int rc = 0;
+  int count;
   char *testdir = NULL;
   char *config_filename = NULL;
   config_file_t ganesha_config;
   cache_inode_parameter_t config_params;
+  fsal_path_t exportpath_fsal;
   void *ht;
   fsal_op_context_t context;
   fsal_export_context_t fs_export_context;
-  fsal_path_t exportpath_fsal;
   int numkeys = -1; /* number of files to cache during benchmark */
   int timetorun = 60; /* seconds */
   nfs_parameter_t nfs_param;
+  int random_key;
 
   /* counters for benchmarking purposes */
   int dirnum;
   int filenum;
-  hash_buffer_t *val, *newval, *key;
-  char testfile[MAXPATHLEN];
-  int testfile_len;
-
-  /* statistics and timing */
-  statistics *stats;
-  double starttime;// = get_time();
-  double endtime;
 
   /* Initialize logging system */
   SetDefaultLogging("TEST");
@@ -202,6 +451,7 @@ int main(int argc, char **argv) {
       {"configfile",         required_argument, 0, 'c'},
       {"operation",          required_argument, 0, 'o'},
       {"testdirectory",      required_argument, 0, 'd'},
+      {"debug",            required_argument, 0, 'D'},
       {0, 0, 0, 0}
     };
   curr_opt = getopt_long (argc, argv, "i:t:c:k:o:d:",
@@ -209,10 +459,14 @@ int main(int argc, char **argv) {
   while (curr_opt != -1) {
     switch (curr_opt) {
     case 'i':
-      if (strncmp(optarg, "GANESHA", 7) == 0)
+      if (strncmp(optarg, "GANESHA", 7) == 0) {
 	func_tab = &ganesha_func;
-      else if (strncmp(optarg, "GLIB", 7) == 0)
+	HASHTABLE = GANESHA;
+      }
+      else if (strncmp(optarg, "GLIB", 7) == 0) {
 	func_tab = &glib_func;
+	HASHTABLE = GLIB;
+      }
       else {
 	LogTest( "The hashtable must be either GANESHA or GLIB.\n");
 	exit(1);
@@ -231,6 +485,9 @@ int main(int argc, char **argv) {
       break;
     case 'd':
       testdir = optarg;
+      break;
+    case 'D':
+      debug = 1;
       break;
     default:
       help_and_quit(argv[0]);
@@ -264,6 +521,7 @@ int main(int argc, char **argv) {
   cache_inode_read_conf_hash_parameter(ganesha_config, &config_params);
   if (config_params.hparam.index_size != -1)
     parameters.index_size = config_params.hparam.index_size;
+  LogTest("INDEX SIZE: %d", parameters.index_size);
   if (config_params.hparam.alphabet_length != -1)
     parameters.alphabet_length = config_params.hparam.alphabet_length;
   if (config_params.hparam.nb_node_prealloc != -1)
@@ -305,7 +563,7 @@ int main(int argc, char **argv) {
       exit(1);
     }
   if(FSAL_IS_ERROR(status = FSAL_InitClientContext(&context)))
-    {
+   {
       LogTest( "Couldn't get the context for FSAL super user");
       exit(1);
     }
@@ -316,79 +574,31 @@ int main(int argc, char **argv) {
   ht = func_tab->init(parameters);
 
   ///////////////////////////////////////////////////////////////////////////
+  /* run benchmark ....... */
+  for(count=0; count < 5; count++) {
+    fprintf(stderr, "b%d\n", count);
+    for(dirnum=0; dirnum-1 < (numkeys/FILES_PER_DIR); dirnum++) 
+      for(filenum=0; filenum < FILES_PER_DIR && (dirnum*FILES_PER_DIR+filenum < numkeys); filenum++)
+	store(ht, &context, exportpath_fsal, dirnum,filenum);
+    for(dirnum=0; dirnum-1 < (numkeys/FILES_PER_DIR); dirnum++)
+      for(filenum=0; filenum < FILES_PER_DIR && (dirnum*FILES_PER_DIR+filenum < numkeys); filenum++)
+	retrieve_no_stats(ht, &context, exportpath_fsal, dirnum,filenum);
 
-  /* run benchmark */
-
-  /* add all files */
-  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 0);
-  
-  /*  for(dirnum=0; dirnum < (numkeys/FILES_PER_DIR); dirnum++) {
-    for(filenum=0; filenum < FILES_PER_DIR; filenum++) {
-      //  generate_data(&data, , &context);
-      //  free_data(data);
-      starttime = get_time();
-      endtime = get_time();
-      endtime - starttime;
+    /* randomly retrieve pairs */
+    srand( (unsigned)time(NULL) );
+    for(dirnum=0; dirnum < numkeys*20; dirnum++) {
+      random_key = rand() % numkeys;
+      retrieve(ht, &context, exportpath_fsal, random_key/FILES_PER_DIR, random_key%FILES_PER_DIR);
     }
+    
+    for(dirnum=0; dirnum-1 < (numkeys/FILES_PER_DIR); dirnum++)
+      for(filenum=0; filenum < FILES_PER_DIR && (dirnum*FILES_PER_DIR+filenum < numkeys); filenum++)
+	del(ht, &context, exportpath_fsal, dirnum,filenum);
+    fprintf(stderr, "a%d\n", count);
   }
-  */  
-
-  //Set test
-  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 0);
-  LogTest("trying to create handle for directory and file: %s", testfile);
-  generate_data(&key, &val, testfile, &context);
-  rc = func_tab->set(ht, key, val, HASHTABLE_SET_HOW_SET_OVERWRITE);
-  if (rc != HASHTABLE_SUCCESS) {
-    LogTest("Failed to add a key/value pair to hashtable!");
-    exit(1);
-  }
-  free(key);
-
-  //Set test
-  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 1);
-  LogTest("trying to create handle for directory and file: %s", testfile);
-  generate_data(&key, &val, testfile, &context);
-  LogTest("trying to add the following handle to hashtable: handle=%s",// cookie=%d",
-	  ((cache_inode_fsal_data_t *) (val)->pdata)->handle);
-	  //	  ((cache_inode_fsal_data_t *)(key->pdata))->handle->data,
-	  //	  ((cache_inode_fsal_data_t *)(key->pdata))->cookie);
-
-  rc = func_tab->set(ht, key, val, HASHTABLE_SET_HOW_SET_OVERWRITE);  
-  if (rc != HASHTABLE_SUCCESS) {
-    LogTest("Failed to add a key/value pair to hashtable!");
-    exit(1);
-  }
-  free(key);
-
-  //Get test
-  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 0);
-  generate_data(&key, &val, testfile, &context);
-  newval = NULL;
-  rc = func_tab->get(ht, key, &newval);
-  if (rc != HASHTABLE_SUCCESS) {
-    LogTest("Failed to retrieve a value from hashtable!");
-    exit(1);
-  }
-  free(key); free(val);
-
-  //Get test
-  testfile_len = create_filename(testfile, exportpath_fsal.path, 0, 1);
-  generate_data(&key, &val, testfile, &context);
-  newval = NULL;
-  rc = func_tab->get(ht, key, &newval);
-  if (rc != HASHTABLE_SUCCESS) {
-    LogTest("Failed to retrieve a value from hashtable!");
-    exit(1);
-  }
-  free(key); free(val);
-
-  /* randomly pick either get or set */
-
-
 
   /* summarize statistics */
-
-
+  print_statistics(stats, numkeys);
 
   return 0;
 }

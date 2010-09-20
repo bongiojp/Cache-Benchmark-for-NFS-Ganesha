@@ -28,12 +28,17 @@ int gan_get(void * ht, hash_buffer_t * buffkey, hash_buffer_t ** buffval){
 
 int gan_set(void * ht, hash_buffer_t * buffkey,
 	 hash_buffer_t * buffval, hashtable_set_how_t how){
-  return HashTable_Test_And_Set((hash_table_t *) ht, buffkey, buffval, how);
+  int rc = HashTable_Test_And_Set((hash_table_t *) ht, buffkey, buffval, how);
+  free(buffkey);
+  free(buffval);
+  return rc;
 }
 
 int gan_del(void * ht, hash_buffer_t * buffkey,
-	   hash_buffer_t * p_usedbuffkey, hash_buffer_t * p_usedbuffdata){
-  return HashTable_Del((hash_table_t *) ht, buffkey, p_usedbuffkey, p_usedbuffdata);
+	   hash_buffer_t ** p_usedbuffkey, hash_buffer_t ** p_usedbuffdata){
+  *p_usedbuffkey = malloc(sizeof(hash_buffer_t));
+  *p_usedbuffdata = malloc(sizeof(hash_buffer_t));
+  return HashTable_Del((hash_table_t *) ht, buffkey, *p_usedbuffkey, *p_usedbuffdata);
 }
 
 unsigned int gan_getsize(void * ht){

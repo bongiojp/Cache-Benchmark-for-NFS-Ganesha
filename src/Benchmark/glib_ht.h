@@ -19,7 +19,8 @@ hash_parameter_t my_hparam;
  * hashtable hash function is not needed here because we record my_hparam
  * globally. */
 guint my_ghash(gconstpointer key) {
-  return (guint) my_hparam.hash_func_key(&my_hparam, (hash_buffer_t *) key);
+  guint x = my_hparam.hash_func_key(&my_hparam, (hash_buffer_t *) key);
+  return x;
 }
 
 gboolean my_comparator(gconstpointer item1, gconstpointer item2) {
@@ -35,12 +36,11 @@ void *glib_init(hash_parameter_t hparam){
 
 int glib_get(void * ht, hash_buffer_t * buffkey, hash_buffer_t ** buffval){
   gpointer result = g_hash_table_lookup((GHashTable*)ht, (gconstpointer) buffkey);
-  if (result != NULL) {
-    (*buffval) = result;
-  }
+  (*buffval) = result;
+  if (result == NULL)
+    return 0;
   else
-    buffval = NULL;
-  return 0; // SUCCESS
+    return HASHTABLE_SUCCESS;
 }
 
 int glib_set(void * ht, hash_buffer_t * buffkey, hash_buffer_t * buffval,
@@ -50,9 +50,16 @@ int glib_set(void * ht, hash_buffer_t * buffkey, hash_buffer_t * buffval,
 }
 
 int glib_del(void * ht, hash_buffer_t * buffkey,
-	     hash_buffer_t * p_usedbuffkey, hash_buffer_t * p_usedbuffdata){
-  int result = g_hash_table_remove((GHashTable*)ht,(gconstpointer) buffkey);
-  return result;
+	     hash_buffer_t ** p_usedbuffkey, hash_buffer_t ** p_usedbuffdata){
+  int result = g_hash_table_lookup_extended((GHashTable*)ht, (gconstpointer) buffkey,
+			       (gpointer)p_usedbuffkey, (gpointer)p_usedbuffdata);
+  if (result = FALSE)
+    return HASHTABLE_ERROR_NO_SUCH_KEY;
+
+  result = g_hash_table_remove((GHashTable*)ht,(gconstpointer) buffkey);
+  if (result == TRUE)
+    return HASHTABLE_SUCCESS;
+  return !HASHTABLE_SUCCESS;
 }
 
 unsigned int glib_getsize(void * ht){
