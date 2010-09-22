@@ -23,7 +23,7 @@
 #include "fsal.h"
 #include "../MainNFSD/nfs_init.h"
 
-#define FILES_PER_DIR 1000
+#define FILES_PER_DIR 5000
 #define TIMER_T unsigned long long int
 /* This needs to be defined because the cache gc will use it as
  * an extern */
@@ -139,10 +139,16 @@ void generate_data(hash_buffer_t **key, hash_buffer_t **val,
   ((cache_inode_fsal_data_t *) (*key)->pdata)->handle = handle;
   ((cache_inode_fsal_data_t *) (*key)->pdata)->cookie = i;
 
-  ((cache_entry_t *) (*val)->pdata)->internal_md.type = REGULAR_FILE;
-  ((cache_entry_t *) (*val)->pdata)->object.file.handle = handle;
-  ((cache_entry_t *) (*val)->pdata)->object.file.pentry_content = (void *)filename;
-  ((cache_entry_t *) (*val)->pdata)->object.file.open_fd.fileno = i;
+  if (debug) {
+    ((cache_entry_t *) (*val)->pdata)->internal_md.type = REGULAR_FILE;
+    ((cache_entry_t *) (*val)->pdata)->object.file.handle = handle;
+    ((cache_entry_t *) (*val)->pdata)->object.file.open_fd.fileno = i;
+  }
+
+  if (debug)
+    ((cache_entry_t *) (*val)->pdata)->object.file.pentry_content = (void *)filename;
+  else
+    free(filename);
 
   (*val)->len = sizeof(cache_entry_t);
   (*key)->len = sizeof(cache_inode_fsal_data_t);
@@ -154,7 +160,8 @@ void free_hash_key(hash_buffer_t *key) {
 }
 
 void free_hash_val(hash_buffer_t *val) {
-  free( ((cache_entry_t *) (val)->pdata)->object.file.pentry_content );
+  if (debug)
+    free( ((cache_entry_t *) (val)->pdata)->object.file.pentry_content );
   free(val->pdata);
   free(val);
 }
@@ -199,9 +206,10 @@ void store(void *ht, fsal_op_context_t *context, fsal_path_t exportpath_fsal, in
   stats->tot_num_sets++;
   stats->tot_set_time += time;
   stats->tot_set_time += time;
-  if (time > stats->get_time_high)
+
+  if (time > stats->set_time_high)
     stats->set_time_high = time;
-  if (time < stats->get_time_low)
+  if (time < stats->set_time_low)
     stats->set_time_low = time;
 
   if (rc != HASHTABLE_SUCCESS) {
@@ -597,9 +605,9 @@ int main(int argc, char **argv) {
 	del(ht, &context, exportpath_fsal, dirnum,filenum);
     fprintf(stderr, "a%d\n", count);
   }
-  fprintf(stderr, "aaaaaaaaaaaaaaaaaaaaaa");
+
   /* summarize statistics */
   print_statistics(stats, numkeys);
-  fprintf(stderr, "bbbbbbbbbbbbbbbbbbbbbb");
+
   return 0;
 }

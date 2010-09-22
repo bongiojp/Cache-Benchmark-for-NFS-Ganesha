@@ -1,0 +1,136 @@
+1. Install glib2 and glib2-devel
+on rhel:
+
+# yum install glib2 glib2-devel
+
+2. Build the Benchmark Makefile
+
+# autoreconf && automake	
+
+3. compile ganesha as normal. I've only compiled the benchmark with
+   GPFS, but it might work with other FSALs.
+
+# ./configure --with-fsal=GPFS && make
+# cd Benchmark
+
+4. Copy the ganesha nfs configuration files to somewhere locally
+   (The CacheInode_Hash section will be read during the benchmark)
+
+# cp /etc/ganesha/*.conf ./
+
+5. Create the test files. "/mnt/temp" will be the location of the testfiles.
+   This is needed for realisitic filehandles ... no more.
+   The first argument is the path. The second argument is the number of directories.
+   The third argument is the number of files per directory. The following command
+   will generate 2 directories with 5000 files in each directory.
+
+   The create_files.c program could be used for faster creation of test files.
+   However the create_files.c program doesn't accept arguments ... you'd have to
+   modify the number of directories and files in the code.
+
+   At the moment the benchmark expects 5000 files to exist in each directory.
+   So either the macro in benchmark.c should be changed or 5000 should be used.
+
+# ./create_testfiles.pl /mnt/temp/ 2 5000
+
+6. If running with the GPFS FSAL, make sure the open-by-handle module is loaded.
+
+# modprobe open-by-handle
+
+7. If running a benchmark with the red/black tree:
+   First check that the index size and preallocation nodes are acceptable:
+
+# grep -A 10 CacheInode_Hash ./gpfs.ganesha.main.conf
+CacheInode_Hash
+{
+    # Size of the array used in the hash (must be a prime number for algorithm efficiency)
+    Index_Size = 17 ;
+
+    # Number of signs in the alphabet used to write the keys
+    Alphabet_Length = 10 ;
+
+    # Number of preallocated RBT nodes
+    Prealloc_Node_Pool_Size = 10000 ;
+}
+
+# ./benchmark --implementation=GANESHA --keys=10000 --configfile=./gpfs.ganesha.nfsd.conf --testdirectory=/mnt/temp/
+
+
+8. If running a benchmark with the glib2 hashtable:
+   First check that the index size and preallocation nodes are acceptable:
+   The GLIB2 hashtable requires a large hash integer, so the index size should
+   be large. Preallocated nodes aren't used, so this can safely be set to 0.
+
+# grep -A 10 CacheInode_Hash ./gpfs.ganesha.main.conf
+CacheInode_Hash
+{
+    # Size of the array used in the hash (must be a prime number for algorithm efficiency)
+    Index_Size = 100000 ;
+
+    # Number of signs in the alphabet used to write the keys
+    Alphabet_Length = 10 ;
+
+    # Number of preallocated RBT nodes
+    Prealloc_Node_Pool_Size = 0 ;
+}
+
+#./benchmark --implementation=GLIB --keys=10000 --configfile=./gpfs.ganesha.nfsd.conf --testdirectory=/mnt/temp/
+
+
+9. Reading the output:
+
+# ./benchmark --implementation=GANESHA --keys=10000 --configfile=./gpfs.ganesha.nfsd.conf --testdirectory=/mnt/temp/
+INDEX SIZE: 17
+NFS STARTUP: EVENT: Setting log file of emergency cache flush thread to /tmp/flush.log
+CONFIG: EVENT: NFS READ_EXPORT: Export 77 (/ibm/fs1) successfully parsed
+NFS STARTUP: EVENT: Configuration file successfully parsed
+b0
+a0
+b1
+a1
+b2
+a2
+b3
+a3
+b4
+a4
+Total Number of Keys in Table at Once: 10000
+Operation: SET
+        Total Count: 50000
+        Total Time: 277524 us
+        Average Time: 5.550480 us
+        Maximum Time: 3 us
+        Minimum Time: 0 us
+Operation: GET
+        Total Count: 500000
+        Total Time: 1208745 us
+        Average Time: 2.417490 us
+        Maximum Time: 2163 us
+        Minimum Time: 0 us
+Operation: DEL
+        Total Count: 50000
+        Total Time: 117793 us
+        Average Time: 2.355860 us
+        Maximum Time: 212 us
+        Minimum Time: 0 us
+Operation: GETSIZE
+        Total Count: 0
+        Total Time: 0.000000 ms
+        Average Time: 0 us
+        Maximum Time: 0 us
+        Minimum Time: 0 us
+
+A little bit of the usual Ganesha startup messages are printed. The FSAL is initialized
+with an export entry during the benchmark. However, nothing is exported. The reason for this
+is that some FSALs need to be initialized before creating file handles to be cached.
+
+The a0, a1, a2 messages just represent which loop of execution the benchmark is on. 5 loops
+are performed.
+
+The total count is the number of times that operation was run.
+The total time for "count" operatoins is reported in microseconds.
+Average time divides time by "count".
+Maximum time is the time that the slowest operation took.
+minimum time is the time the faster operation took.
+
+the getsize operation is not being tested yet.
