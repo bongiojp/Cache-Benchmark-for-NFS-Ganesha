@@ -32,11 +32,11 @@ statistics *new_statistics() {
     LogTest("Couldn't calloc memory for statistics.");
     exit(1);
   }
-  newstats->get_time_low--;
-  newstats->set_time_low--;
-  newstats->del_time_low--;
-  newstats->getsize_time_low--;
-
+  newstats->get_time_low = 
+    newstats->set_time_low = 
+    newstats->del_time_low = 
+    --newstats->getsize_time_low;
+  
   return newstats;
 }
 

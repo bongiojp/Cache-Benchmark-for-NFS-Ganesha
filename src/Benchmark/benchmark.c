@@ -98,7 +98,7 @@ TIMER_T get_time(){
   struct timeval t;
   gettimeofday(&t, NULL);
   //  double d = t.tv_sec + (double) t.tv_usec/1000000;
-  TIMER_T d = t.tv_sec * pow(10,6) + t.tv_usec;
+  TIMER_T d = t.tv_sec * 1000000 + t.tv_usec;
   return d;
 }
 
@@ -202,7 +202,6 @@ void store(void *ht, fsal_op_context_t *context, fsal_path_t exportpath_fsal, in
   
   endtime = get_time();
   time = endtime - starttime;     
-
   stats->tot_num_sets++;
   stats->tot_set_time += time;
   stats->tot_set_time += time;
